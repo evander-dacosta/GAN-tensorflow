@@ -185,21 +185,17 @@ class GAN(BaseModel):
                 d_loss, _ = sess.run([self.d_loss, self.d_optimise_op], {
                                       self.z: z_train, self.x: x_train
                                       })
-                g_loss, _ = sess.run([self.g_loss, self.g_optimise_op], {
+                summary, g_loss, _ = sess.run([self.summary_op,
+                                               self.g_loss,
+                                               self.g_optimise_op], {
                                       self.z: z_train, self.x: x_train
                                       })
                 d_losses.append(d_loss)
                 g_losses.append(g_loss)
+                self.writer.add_summary(summary, (n_iter * epoch) + i)
             
             # End-of-epoch stuff
             print('Epoch {}'.format(epoch + 1))
-            summary = sess.run(self.summary_op, {
-                    self.z:self.sample_z(x.shape[0],self.config.z_dim),
-                    self.x: x
-                    })
-            self.writer.add_summary(summary, epoch)
-            if(epoch % self.config.save_every==0):
-                self.save_model(sess)
                 
         self.save_model(sess)
             
