@@ -26,10 +26,7 @@ class BaseModel(object):
         self.config = config
         self._saver = None
         
-        try:
-            self._attrs = config.__dict__['__flags']
-        except:
-            self._attrs = class_vars(config)
+        self._attrs = class_vars(config)
         print(self._attrs)
         
         for attr in self._attrs:
@@ -37,13 +34,47 @@ class BaseModel(object):
             setattr(self, name, getattr(self.config, attr))
     
         self._example_state = None
+        
+
+    def _add_summary(self, name, var):
+        ndims = var.shape.ndims
+        with tf.name_scope('{}_summaries'.format(name)):
+            if(ndims >= 1):
+                mean = tf.reduce_mean(var)
+                tf.summary.scalar('{}_mean'.format(name), mean)
+                with tf.name_scope('stddev'):
+                    stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+                tf.summary.scalar('{}_stddev'.format(name), stddev)
+                tf.summary.scalar('{}_max'.format(name), tf.reduce_max(var))
+                tf.summary.scalar('{}_min'.format(name), tf.reduce_min(var))
+                tf.summary.histogram('{}_histogram'.format(name), var)
+            else:
+                tf.summary.scalar(name, var)
+                
+    def add_summary(self, *args):
+        if(len(args) == 1):
+            var_dict = args[0]
+            if(not isinstance(var_dict, dict)):
+                raise ValueError("Argument given to Model.add_summary must be a 'dict' type"
+                                 "given {}".format(type(var_dict)))
+            summary_variables = var_dict.items()
+            for name, var in summary_variables:
+                self._add_summary(name, var)
+                
+        elif(len(args) == 2):
+            name, var = args
+            self._add_summary(name, var)
+            
+        else:
+            raise Exception("Unknown number of arguments."
+                            "Needs a name and a Tensorflow variable")
             
         
     def save_model(self, sess, step=None):
         print("[*] Saving a checkpoint")
         if(not os.path.exists(self.checkpoint_dir)):
             os.makedirs(self.checkpoint_dir)
-        self.saver.save(sess, self.checkpoint_dir, global_step=self.step)
+        self.saver.save(sess, self.checkpoint_dir)
         
     def load_model(self):
         print("[*] Loading a model")
@@ -95,7 +126,4 @@ class BaseModel(object):
         raise NotImplementedError()
         
     def predict(self, x):
-        raise NotImplementedError()
-        
-    def add_summary(self, summary_tags):
         raise NotImplementedError()

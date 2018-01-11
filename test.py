@@ -22,14 +22,19 @@ class Config:
     g_hidden_units = 256
     g_hidden_activation = 'relu'
     
+    # Discriminator params
     d_hidden_units = 256
     d_hidden_activation = 'relu'
     
+    # Model params
+    save_every = 100
     batch_size = 128
-    n_epochs = 1000
+    n_epochs = 10000
+    
     
     
     def __init__(self):
+        self.name = 'simple_gan'
         self.h_run = 1
     
     
@@ -68,7 +73,8 @@ class GAN(BaseModel):
             
         
         super(GAN, self).__init__(config)
-        
+            
+            
 
     def build_generator(self, z):
         with tf.variable_scope('generator'):            
@@ -81,6 +87,7 @@ class GAN(BaseModel):
                 Dense(g_hidden, units=self.input_dim, 
                       activation=tf.nn.sigmoid,
                       name='output')
+            self.add_summary(self.g_w)
         return g_output
                 
     def build_discriminator(self, x, reuse=False):
@@ -97,6 +104,7 @@ class GAN(BaseModel):
                           activation=lambda x: x,
                           reuse=reuse,
                           name='output')
+                self.add_summary(self.d_w)
             
         else:
             with tf.variable_scope('discriminator'):
@@ -123,6 +131,9 @@ class GAN(BaseModel):
             self.g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.d_fake_logits,
                                                                                  labels=tf.ones_like(self.d_fake_logits)))
             
+            self.add_summary('d_loss', self.d_loss)
+            self.add_summary('g_loss', self.g_loss)
+            
             self.d_optimiser = tf.train.AdamOptimizer()
             self.g_optimiser = tf.train.AdamOptimizer()
             
@@ -142,6 +153,10 @@ class GAN(BaseModel):
         
         self.build_optimiser()
         
+        self.summary_op = tf.summary.merge_all()
+        self.writer = tf.summary.FileWriter('./logs/{}'.format(self.model_dir),
+                                            sess.graph)
+        
         sess.run(tf.global_variables_initializer())
         
         
@@ -151,7 +166,6 @@ class GAN(BaseModel):
     
     def fit(self, x, sess):
 
-        
         def plot_samples():
             samples = sess.run(self.g_output, {self.z: self.sample_z(16, 
                                                                 self.config.z_dim)})
@@ -162,7 +176,7 @@ class GAN(BaseModel):
         n_epochs = self.config.n_epochs
         n_iter = int(len(x) / float(batch_size))
         
-        for epoch in range(n_epochs):
+        for epoch in range(1, n_epochs+1):
             g_losses = []
             d_losses = []
             for i in tqdm(range(n_iter)):
@@ -176,16 +190,21 @@ class GAN(BaseModel):
                                       })
                 d_losses.append(d_loss)
                 g_losses.append(g_loss)
+            
+            # End-of-epoch stuff
             print('Epoch {}'.format(epoch + 1))
-            print('\t Discriminator Loss: {:.4}'.format(np.mean(d_losses)))
-            print('\t Generator Loss: {:.4}'.format(np.mean(g_losses)))
-
+            summary = sess.run(self.summary_op, {
+                    self.z:self.sample_z(x.shape[0],self.config.z_dim),
+                    self.x: x
+                    })
+            self.writer.add_summary(summary, epoch)
+            if(epoch % self.config.save_every==0):
+                self.save_model(sess)
+                
         self.save_model(sess)
+            
         
     def predict(self, x):
-        raise NotImplementedError()
-        
-    def add_summary(self, summary_tags):
         raise NotImplementedError()
 
 
@@ -194,16 +213,13 @@ if __name__ == '__main__':
     tf.reset_default_graph()
 
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+    
     config = Config()
+    config.h_run = 2
     
     model = GAN(config)
     
     with tf.Session() as sess:
         model.build(sess)
         model.fit(mnist.train.images, sess)
-        """for i in range(100000):
-            a, _ = sess.run([model.d_loss, model.d_optimise_op], {model.z: model.sample_z(128, 100),
-                                               model.x: mnist.train.images[:128]})
-            b, _ = sess.run([model.g_loss, model.g_optimise_op], {model.z: model.sample_z(128, 100),
-                                               model.x: mnist.train.images[:128]})
-            print(a, b)"""
+        samples = sess.run(model.g_output, {model.z: model.sample_z(16, config.z_dim)})
